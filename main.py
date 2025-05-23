@@ -157,7 +157,7 @@ def send_discord_message(track):
                     f"**Bass:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
                     f"**Pro Lead:** {get_difficulty_bar(get_adjusted_difficulty(track, 'pg'))}\n"
                     f"**Pro Drums:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ds'))}\n"
-                    f"**Pro Bass:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}"
+                    f"**Pro Bass:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
                     f"**Pro Vocals:** {get_difficulty_bar(get_adjusted_difficulty(track, 'bd'))}\n"
                 ),
                 "inline": False
