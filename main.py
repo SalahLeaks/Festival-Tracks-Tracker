@@ -28,6 +28,9 @@ custom_offsets = {
     "Gasolina": {"pb": 4, "pd": 1, "vl": 1, "pg": 1, "ds": 1, "ba": 1},
 }
 
+# New: Role to ping for Spark Tracks updates (always ping once)
+ROLE_ID_SPARK = YOUR_SPARK_ROLE_ID  # integer
+
 def get_difficulty_bar(value):
     """
     Returns a visual bar for the difficulty based on the given value.
@@ -44,7 +47,6 @@ def get_adjusted_difficulty(track, key):
     """
     title = track.get("tt", "").strip()
     raw = track.get("in", {}).get(key, 0)
-    # Get the song-specific offset if available; default offset is 1.
     offset = custom_offsets.get(title, {}).get(key, 1)
     adjusted = raw + offset
     return min(adjusted, MAX_BLOCKS)
@@ -62,12 +64,11 @@ def parse_date(date_str):
     Parses an ISO date string and returns a Unix timestamp.
     """
     if not date_str:
-        return None  # Return None if no date is provided
+        return None
     try:
         print(f"[DEBUG] Parsing date: {date_str}")
         dt = parser.isoparse(date_str)
-        timestamp = int(dt.timestamp())
-        return timestamp
+        return int(dt.timestamp())
     except Exception as e:
         print(f"[DEBUG] Error parsing date '{date_str}':", e)
         return None
@@ -112,18 +113,15 @@ def save_data(data):
     except Exception as e:
         print("[DEBUG] Error saving data:", e)
 
-def send_discord_message(track):
+def send_discord_message(track, content=None):
     """
     Sends an embed message to Discord with the new track information.
     Implements retry logic to handle rate limits.
     """
     active_date = track.get("_activeDate", "")
     print(f"[DEBUG] '_activeDate' field value: {active_date}")
-    active_date_ts = parse_date(active_date)
-    if not active_date_ts:
-        active_date_ts = int(time.time())
-        print("[DEBUG] Using fallback timestamp:", active_date_ts)
-    active_date_timestamp = f"<t:{active_date_ts}:f>"
+    ts = parse_date(active_date) or int(time.time())
+    active_date_timestamp = f"<t:{ts}:f>"
 
     rating_code = track.get("ar", "N/A")
     rating_mapping = {
@@ -137,27 +135,26 @@ def send_discord_message(track):
 
     song_id = track.get("ti", "").split(":")[-1] if track.get("ti") else "N/A"
 
-    # Build the embed using our adjusted difficulties.
     embed = {
         "title": "New Track Detected",
         "thumbnail": {"url": track.get("au", "")},
         "fields": [
-            {"name": "Jam Track", "value": track.get("tt", "Unknown"), "inline": False},
-            {"name": "Artist", "value": track.get("an", "Unknown"), "inline": False},
-            {"name": "Rating", "value": rating_description, "inline": True},
-            {"name": "Song ID", "value": f"```{song_id}```", "inline": True},
-            {"name": "Active Date", "value": f"Date: {active_date_timestamp}", "inline": True},
-            {"name": "Duration", "value": format_duration(track.get("dn", 0)), "inline": True},
+            {"name": "Jam Track",  "value": track.get("tt", "Unknown"), "inline": False},
+            {"name": "Artist",     "value": track.get("an", "Unknown"), "inline": False},
+            {"name": "Rating",     "value": rating_description,         "inline": True},
+            {"name": "Song ID",    "value": f"```{song_id}```",          "inline": True},
+            {"name": "Active Date","value": f"Date: {active_date_timestamp}", "inline": True},
+            {"name": "Duration",   "value": format_duration(track.get("dn", 0)), "inline": True},
             {
                 "name": "Difficulty Chart",
                 "value": (
-                    f"**Lead:** {get_difficulty_bar(get_adjusted_difficulty(track, 'pb'))}\n"
-                    f"**Drums:** {get_difficulty_bar(get_adjusted_difficulty(track, 'pd'))}\n"
-                    f"**Vocals:** {get_difficulty_bar(get_adjusted_difficulty(track, 'vl'))}\n"
-                    f"**Bass:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
-                    f"**Pro Lead:** {get_difficulty_bar(get_adjusted_difficulty(track, 'pg'))}\n"
-                    f"**Pro Drums:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ds'))}\n"
-                    f"**Pro Bass:** {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
+                    f"**Lead:**       {get_difficulty_bar(get_adjusted_difficulty(track, 'pb'))}\n"
+                    f"**Drums:**      {get_difficulty_bar(get_adjusted_difficulty(track, 'pd'))}\n"
+                    f"**Vocals:**     {get_difficulty_bar(get_adjusted_difficulty(track, 'vl'))}\n"
+                    f"**Bass:**       {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
+                    f"**Pro Lead:**   {get_difficulty_bar(get_adjusted_difficulty(track, 'pg'))}\n"
+                    f"**Pro Drums:**  {get_difficulty_bar(get_adjusted_difficulty(track, 'ds'))}\n"
+                    f"**Pro Bass:**   {get_difficulty_bar(get_adjusted_difficulty(track, 'ba'))}\n"
                     f"**Pro Vocals:** {get_difficulty_bar(get_adjusted_difficulty(track, 'bd'))}\n"
                 ),
                 "inline": False
@@ -166,6 +163,8 @@ def send_discord_message(track):
     }
 
     payload = {"embeds": [embed]}
+    if content:
+        payload["content"] = content
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -191,7 +190,7 @@ def extract_tracks(api_data):
     tracks = []
     for key, value in api_data.items():
         if key.startswith("_"):
-            continue  # Skip metadata
+            continue
         if isinstance(value, dict):
             if "track" in value:
                 track_data = value["track"]
@@ -229,8 +228,14 @@ def check_for_new_tracks():
         else:
             print(f"[DEBUG] Track already processed: {track.get('tt', 'Unknown')} (ID: {song_id})")
 
-    for track in new_tracks:
-        send_discord_message(track)
+    if new_tracks:
+        # always ping once (even if only one)
+        ping_once = True
+        for idx, track in enumerate(new_tracks):
+            if idx == 0 and ping_once:
+                send_discord_message(track, content=f"<@&{ROLE_ID_SPARK}>")
+            else:
+                send_discord_message(track)
 
     all_tracks = {track["su"]: track for track in current_tracks if "su" in track}
     save_data(all_tracks)
