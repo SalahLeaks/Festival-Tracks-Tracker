@@ -230,10 +230,8 @@ def check_for_new_tracks():
 
     if new_tracks:
         # always ping once (even if only one)
-        ping_once = True
-        for idx, track in enumerate(new_tracks):
-            if idx == 0 and ping_once:
-                send_discord_message(track, content=f"<@&{ROLE_ID_SPARK}>")
+        for track in new_tracks:
+            send_discord_message(track, content=f"<@&{ROLE_ID_SPARK}>")
             else:
                 send_discord_message(track)
 
