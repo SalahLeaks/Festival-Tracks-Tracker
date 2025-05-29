@@ -53,7 +53,7 @@ def get_adjusted_difficulty(track, key):
 
 def format_duration(seconds):
     """
-    Converts seconds into a human-readable format: `X minutes and Y seconds`.
+    Converts seconds into a human-readable format: X minutes and Y seconds.
     """
     minutes = seconds // 60
     sec = seconds % 60
@@ -142,7 +142,7 @@ def send_discord_message(track, content=None):
             {"name": "Jam Track",  "value": track.get("tt", "Unknown"), "inline": False},
             {"name": "Artist",     "value": track.get("an", "Unknown"), "inline": False},
             {"name": "Rating",     "value": rating_description,         "inline": True},
-            {"name": "Song ID",    "value": f"```{song_id}```",          "inline": True},
+            {"name": "Song ID",    "value": f"{song_id}",          "inline": True},
             {"name": "Active Date","value": f"Date: {active_date_timestamp}", "inline": True},
             {"name": "Duration",   "value": format_duration(track.get("dn", 0)), "inline": True},
             {
@@ -204,22 +204,9 @@ def extract_tracks(api_data):
     print(f"[DEBUG] Total tracks extracted: {len(tracks)}")
     return tracks
 
-def is_track_modified(old: dict, new: dict) -> bool:
-    """
-    Compare two track dicts and return True if any of the fields you care about have changed.
-    Here we do a deep-comparison; you can customize which keys to check if you want.
-    """
-    # Remove metadata fields that always change (e.g. timestamps) if desired:
-    ignore_keys = {"lastModified", "_activeDate"}
-    for k in ignore_keys:
-        old.pop(k, None)
-        new.pop(k, None)
-    return old != new
-
 def check_for_new_tracks():
     """
-    Checks the API for new or modified tracks compared to stored data
-    and sends a Discord webhook (with exactly one ping) if found.
+    Checks the API for new tracks compared to stored data and sends a Discord webhook if found.
     """
     api_data = fetch_tracks()
     if not api_data:
@@ -230,37 +217,26 @@ def check_for_new_tracks():
     previous_data = load_previous_data()
 
     new_tracks = []
-    modified_tracks = []
     for track in current_tracks:
         song_id = track.get("su")
         if not song_id:
             print("[DEBUG] Track without a song ID found, skipping:", track)
             continue
-
         if song_id not in previous_data:
             new_tracks.append(track)
             print(f"[DEBUG] New track detected: {track.get('tt', 'Unknown')} (ID: {song_id})")
         else:
-            # detect modifications
-            old = previous_data[song_id].copy()
-            if is_track_modified(old, track.copy()):
-                modified_tracks.append(track)
-                print(f"[DEBUG] Modified track detected: {track.get('tt', 'Unknown')} (ID: {song_id})")
-            else:
-                print(f"[DEBUG] Track unchanged: {track.get('tt', 'Unknown')} (ID: {song_id})")
+            print(f"[DEBUG] Track already processed: {track.get('tt', 'Unknown')} (ID: {song_id})")
 
-    # combine both lists, preserving order: new first, then modified
-    updates = new_tracks + modified_tracks
-
-    if updates:
-        # ping exactly once, on the first message
-        for idx, track in enumerate(updates):
-            if idx == 0:
+    if new_tracks:
+        # always ping once (even if only one)
+        ping_once = True
+        for idx, track in enumerate(new_tracks):
+            if idx == 0 and ping_once:
                 send_discord_message(track, content=f"<@&{ROLE_ID_SPARK}>")
             else:
                 send_discord_message(track)
 
-    # always save the full current state
     all_tracks = {track["su"]: track for track in current_tracks if "su" in track}
     save_data(all_tracks)
 
